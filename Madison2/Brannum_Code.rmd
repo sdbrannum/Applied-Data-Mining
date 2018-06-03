@@ -1,0 +1,196 @@
+---
+title: "Final - Ashley Madison"
+author: "Steven Brannum"
+output: html_document
+---
+
+
+```{r}
+#library(RMariaDB)
+library(Matrix)
+library(arules)
+library(arulesViz)
+library(caret)
+library(rpart)
+library(rpart.plot)
+```
+
+You can also embed plots, for example:
+
+```{r data}
+#mydb = dbConnect(RMariaDB::MariaDB(), user = 'root', password = 'rush', dbname = 'madison', host = 'localhost')
+#dbListTables(mydb)
+
+#res <- dbSendQuery(mydb, "SELECT * FROM sample")
+#sample = dbFetch(res)
+
+sample <- read.csv("D:/OneDrive/SP18/Applied Data Mining - BIA 6301 BSB/madison/madison/sample.csv")
+
+head(sample)
+
+#drop id and birth_year, height, weight
+sample <- sample[, - c(1,3, 9, 10)]
+
+#fix null birth_year, profile_weight, and profile_height
+#!rowSums(is.na(sample))
+
+#sample$birth_year <- sapply(sample$birth_year, function(y) { if (is.na(y)) 'Unknown' else y })
+#sample$profile_height <- sapply(sample$profile_height, function(y) { if (is.na(y)) 'Unknown' else y })
+#sample$profile_weight<- sapply(sample$profile_weight, function(y) { if (is.na(y)) 'Unknown' else y })
+
+#factor
+sample$gender <- factor(sample$gender)
+#sample$birth_year <- factor(sample$birth_year)
+sample$credits <- factor(sample$credits)
+sample$bot_chatted <- factor(sample$bot_chatted)
+sample$relationship <- factor(sample$relationship)
+sample$body_type <- factor(sample$body_type)
+sample$smokes <- factor(sample$smokes)
+#sample$profile_height <- factor(sample$profile_height)
+#sample$profile_weight <- factor(sample$profile_weight)
+
+dim(sample)
+head(sample)
+```
+
+
+
+Frequencies
+
+```{}
+# create transactions
+tsample <- as(sample, "transactions")
+
+itemFrequencyPlot(tsample, topN = 20)
+
+basic_rules <- apriori(tsample, parameter = list(support = 0.1, confidence = 0.5, minlen = 2))
+
+print(basic_rules)
+inspect(basic_rules[1:10])
+
+
+basic_rules_pruned <- basic_rules[!is.redundant(basic_rules)]
+
+#sort by lift then confidence
+basic_rules_pruned <- sort(basic_rules_pruned, by = c('lift', 'confidence'))
+print(basic_rules_pruned)
+inspect(basic_rules_pruned[1:15])
+
+#sort by confidence then lift
+basic_rules_pruned <- sort(basic_rules_pruned, by = c( 'confidence', 'lift'))
+print(basic_rules_pruned)
+inspect(basic_rules_pruned[1:15])
+
+```
+
+Look at rhs and lhs for credit=CREDIT rules
+
+
+```{}
+
+#rhs credits unpruned
+basic_rules_rhs_credit_unpruned <- subset(basic_rules, (rhs %pin% 'credits=CREDITS'))
+print(basic_rules_rhs_credit_unpruned)
+inspect(basic_rules_rhs_credit_unpruned[1:2])
+
+#lhs credits unpruned
+basic_rules_lhs_credit_unpruned <- subset(basic_rules, (lhs %pin% 'credits=CREDITS'))
+print(basic_rules_lhs_credit_unpruned)
+inspect(basic_rules_lhs_credit_unpruned[1:7])
+
+
+#rhs credits pruned
+basic_rules_rhs_credit_pruned <- subset(basic_rules_pruned, (rhs %in% 'credits=CREDITS'))
+print(basic_rules_rhs_credit_pruned)
+inspect(basic_rules_rhs_credit_pruned[1:2])
+
+#lhs credits pruned
+basic_rules_lhs_credit_pruned <- subset(basic_rules_pruned, (lhs %in% 'credits=CREDITS'))
+print(basic_rules_lhs_credit_pruned)
+inspect(basic_rules_lhs_credit_pruned[1:6])
+
+
+
+
+#female & bot chatted
+
+
+##basic_rules_rhsunknown_removed <- subset(basic_rules_pruned, !(rhs %in% 'Alcohol.Results=Unknown'))
+##basic_rules_rhsunknown_removed <- subset(basic_rules_rhsunknown_removed, !(rhs %in% 'Drug.Involvement=Unknown'))
+#basic_rules_rhs_credit_unpruned <- subset(basic_rules, (rhs %in% 'credits=CREDITS'))
+#print(basic_rules_rhs_credit_unpruned)
+#basic_rules_rhs_credit_unpruned_sorted <- sort(basic_rules_rhs_credit_unpruned, by= c('lift', 'confidence'))
+#inspect(basic_rules_rhs_credit_unpruned_sorted[1:15])
+
+
+##remove redundant
+#basic_rules_pruned <- basic_rules[!is.redundant(basic_rules)]
+#print(basic_rules_pruned)
+#inspect(basic_rules_pruned[1:10])
+
+
+#basic_rules_rhs_credit <- subset(basic_rules_pruned, (rhs %in% 'credits=CREDITS'))
+#print(basic_rules_rhs_credit)
+#inspect(basic_rules_rhs_credit)
+##sort
+#basic_rules_sorted <- sort(basic_rules, by = c("confidence", "lift"))
+#inspect(basic_rules_sorted[1:15])
+```
+
+
+
+Decision Tree
+```{r dt}
+
+set.seed(312)
+
+
+
+#partitioning data
+trainIndex <- createDataPartition(sample$credits, p = .8, list = FALSE, times = 1)
+trainSet <- sample[trainIndex,]
+testSet <- sample[-trainIndex,]
+dim(trainSet)
+dim(testSet)
+
+prop.table(table(trainSet$credits))
+prop.table(table(testSet$credits))
+
+
+#confusion matrix
+cvCtrl <- trainControl(method = "cv", number = 10)
+
+actual <- testSet$credits
+
+sample_dt <- train(credits ~ ., data = trainSet, method = "rpart", metric = "Accuracy", trControl = cvCtrl)
+
+sample_dt
+
+
+predicted_dt <- predict(sample_dt, testSet, type = "raw")
+
+results.matrix.dt <- confusionMatrix(predicted_dt, actual)
+
+
+print(results.matrix.dt)
+
+
+
+#tree
+
+
+data_rpart <- rpart(sample$credits ~ ., data = sample, control = rpart.control(mindepth=5), method = "class", parms = list(split = "gini"))
+rpart.plot(data_rpart, type = 0, extra = 101)
+
+cptable <- printcp(data_rpart)
+cptable
+plotcp(data_rpart, minline = TRUE, col = "red")
+
+#test without smoking
+sampleWithoutSmokes <- sample[, - c(6)]
+data_rpart2 <- rpart(sampleWithoutSmokes$credits ~ ., data = sampleWithoutSmokes, control = rpart.control(mindepth = 6), method = "class", parms = list(split = "gini"))
+rpart.plot(data_rpart2, type = 0, extra = 101)
+
+
+
+```
