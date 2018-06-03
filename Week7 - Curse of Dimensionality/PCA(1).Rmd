@@ -1,0 +1,475 @@
+---
+title: 'Week 7: Curse of Dimensionality'
+author: "Xuan Pham & San Cannon"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# R Packages
+
+The packages we will use this week include **glmnet**, **rpart**, **rpart.plot**, **caret**. 
+
+```{r packages}
+
+library(glmnet)
+library(rpart)
+library(rpart.plot)
+library(caret)
+options(scipen = 999)
+
+```
+
+# Readings for the Week
+
+The recommended readings for this week include pages 374-384 (Section 10.2) and pages 219-236 (Section 6.2.2 to Section 6.3.1) in the Introduction to Statistical Learning text by James et al. (2013). The text can be found here: http://www-bcf.usc.edu/~gareth/ISL/. 
+
+
+# Food for Thought  
+
+Take a look at this chessboard. The board is two dimensional. The length (and width) has eight "spots," so the board has a total of $8*8 = 64$ spots. A chess piece can only be located at one spot among the 64 options. Furthermore, the nearest neighboring chess piece is somewhere in the other 63 location options.  
+
+Now imagine that we expand the chessboard to a third dimension, the flat plane would become a cube. The location options would increase to $8*8*8=512$. Since a given chess piece can only be located in one spot, the nearest neighboring chess piece is somewhere in the other 511 location options.  
+
+If we can increase the cube into the fourth dimension, we would get a [tesseract](https://en.wikipedia.org/wiki/Tesseract) and that would increase the location options to $8*8*8*8=4096$! The nearest neighboring chess piece is now in the other 4,095 location options. In another word, the nearest neighbor is now no longer meaningful. It can be just about any random chess piece.  
+
+Note: Refer to [Domingos 2010](https://homes.cs.washington.edu/~pedrod/papers/cacm12.pdf) for a more complete discussion.     
+
+![chessboard](https://upload.wikimedia.org/wikipedia/commons/4/4a/AAA_SVG_Chessboard_and_chess_pieces_04.svg)
+
+# So How Does Any of This Matter to Data Mining?  
+
+The dimension of a model is equivalent to the number of predictors. When we add more predictors, we are increasing the dimension of the model. Patterns and structures that we want to find via any model become a harder and harder task because the data space becomes increasingly sparse. We have less and less number of observed cases in our training set to "train" any model. In another word, there is now too much noise for us to parse through to find useful information.  This problem is called the **curse of dimensionality**.  
+
+# Related Problems  
+
+We have seen in the past few weeks that we create many new variables (think dummy variables and new forms of existing variables) in the data preprocessing stage. Problems exist when we create new variables:  
+
+*New variables are correlated with existing variables. If we use all the variables in a linear regression model, we run into a problem called multicollinearity. Multicollinearity exists when we cannot separate out the effect of one predictor from another predictor.  
+
+*Including correlated predictors or predictors that are not related to the target variable can also lead to overfitting.  
+
+*Superflous variables can also increase computational costs.  
+
+# What Do We Do?  
+
+What if we could obtain a reduced representation of the data set that is much smaller in volume but yet produces the same (or almost the same) analytical results? We could:  
+
+* Avoid the curse of dimensionality  
+* Help eliminate irrelevant features and reduce noise  
+* Reduce time and space required in data mining  
+* Allow easier visualization  
+
+We will discuss two methods of reducing data dimension.  
+
+The first method is called **principal components analysis** or **PCA**. PCA is intended to be done on a data set prior to applying a model. PCA is part of the data preprocessing stage, so it does not consider the target variable at all.   
+
+The second method is called **lasso regression**. Lasso extracts the most informative predictors with respect to the target variable.  
+
+# Principal Components Analysis (PCA)
+
+The PCA approach to dimension reduction posists that there exists some weighted linear combinations of the original variables that explain the majority of information of the original data set. We want to find those weighted linear combinations!  
+
+## Let's Start with a Simple Example  
+
+```{r simple}
+# height and weight data
+height <- c(65.78, 71.52,69.4,68.22, 67.79, 68.7, 69.8, 70.01, 67.9, 66.78, 66.49, 67.62, 68.3, 67.12, 68.28, 71.09, 66.46, 68.65, 71.23, 67.13)
+weight <- c(112.99, 136.49, 153.03, 142.34, 144.3, 123.3, 141.49, 136.46, 112.37, 120.67, 127.45, 114.14, 125.61, 122.46, 116.09, 140, 129.5, 142.97, 137.9, 124.04)
+
+df <- data.frame(height, weight)
+head(df)
+plot(df$weight, df$height, xlab = "Weight", ylab = "Height", main = "Height vs Weight", col=ifelse(df$height < 66, "red", "black"))
+```
+```{r HW pca}
+pca_hw <- prcomp(df)
+pca_hw
+summary(pca_hw)
+```
+Wait, what?  Oh yeah - need to worry about scale.
+```{r HW scale pca}
+df.z <- scale(df)
+pca_hw_z <- prcomp(df.z)
+pca_hw_z
+summary(pca_hw_z)
+```
+```{r hw loadings}
+scores<-pca_hw_z$x
+head(scores)
+```
+
+
+And our picture?
+```{r pca plot}
+
+plot(scores[,1], scores[,2], xlab = "PC2", ylab = "PC1", main = "Principle Components", col=ifelse(scores[,1] < -2, "red", "black"))
+
+```
+
+Now let's scale up a bit and use our cereal data again
+
+```{r import}
+Cereals <- read.csv("Cereals.csv")
+Cereals<- na.omit(Cereals) #remove NA's
+
+row.names(Cereals) <- Cereals$name
+cereals.complete <-Cereals[,-1]
+```
+
+```{r import.reduced}
+names(cereals.complete)
+      
+cereals <- cereals.complete[,-c(1:2,11:12)] #remove categorical variables: mfr, type, vitamins, shelf
+```
+
+Let's begin with a simple example. Imagine that we have a smaller data set of only two variables: **calories** and **rating**. The rating variable shows Consumer Reports ratings for each cereal's "heathiness". (Ignore all the other variables for now.)  
+
+First, let's look at the mean for each variable.
+
+```{r mean}
+mean(cereals$calories)
+mean(cereals$rating)
+```
+Let's look at the variance of each variable.  
+
+```{r varcovmatrix}
+var(cereals$calories)
+var(cereals$rating)
+```
+
+We see that the total variance of both variables is 394 + 197 = 590. **calories** accounts for $\frac{394}{590}=67\%$ of the total variability, and **rating** accounts for the other $33\%$ of the total variability. If we have to reduce the dimension of our two variables data set down to one variable, we would lose at least $33\%$ of the total variability.  
+
+Is there a better way to do dimension reduction that would allow us to lose less than 34% of the total variability?  
+
+### A Visual Representation  
+
+The scatter plot below shows calories versus rating on a two dimensional plane. Now if we have to reduce the dimension of the data set down to one dimension (from a plane down to a line), then the red line would capture the most variability in the data set. We make the assumption that the red line would preserve the most amount of variance in the original data set, and, hence, would retain the most information in the original two variables data set. At the same time, the red line is also the closest (of all the possible lines) to the actual observations (i.e. minimizing the sum of squared Euclidean distances). These are two unique characteristics of this red line. In the parlance of PCA, we call this red line the **first principal component**. Thus, the first principal component is a linear projection that captures the most variability (and, thus, information) in the original data set.  
+
+
+```{r scatterplot.pc1}
+plot(cereals$calories, cereals$rating, xlim=c(0,200), ylim=c(0,120))
+segments(75,100,125,5, col="red")
+```
+
+There also exists another line that contains the second largest amount of variance, and, yet, uncorrelated to the red line. As you can see below, the blue line is perpendicular to the red line. In technical terminology, we call the blue line "orthogonal" to the red line. The blue line represents the second principal component.  
+
+```{r scatterplot.pc2}
+plot(cereals$calories, cereals$rating, xlim=c(0,200), ylim=c(0,120), xlab="calories", ylab="rating", 
+     main="Scatter Plot of Calories vs. Rating With Two Principal Component Directions")
+segments(75,100,125,5, col="red")
+segments(75,20,130,50, col="blue")
+```
+
+Instead of trying to "guess" where the first and second principal components are on a scatter plot, R can find the exact linear projections for us.  
+
+```{r prcomp2}
+
+pcs <- prcomp(data.frame(cereals$calories,cereals$rating))
+
+summary(pcs)
+```
+
+The above output tells us that there are two principal components. The first principal component is a linear projection that accounts for $86.71\%$ of the total variance in the data set. The second principal component is an orthogonal linear projection that accounts for the other $13.29\%$ of the total variance.  
+
+The barplot below shows the same information.  
+
+```{r prcomp2.varexp}
+pcs.variance.explained <-(pcs$sdev^2 / sum(pcs$sdev^2))*100
+barplot(pcs.variance.explained, las=2, xlab="Principal Component", ylab="% Variance Explained", main="Principal Components versus Percent of Variance Explained")
+```
+
+```{r prcomp2.loadings}
+pcs$rotation
+```
+
+The rotation matrix gives us the weights, which are usually called **loadings**, used to project the original data points onto the first and second principal component directions. The loadings for the first principal component are $(0.853,-0.522)$, and the loadings for the second principal component are $(0.522, 0.853)$.  So how do we use the loading values?  
+
+Here is an example for the first cereal, 100% Bran, with 70 calories and a rating of 68.4:  
+
+$score_{pca.1}=0.853*(70-107.027)+(-0.523)*(68.4-42.372)=-45.197$
+$score_{pca.2}=0.522*(70-107.027)+(0.853)*(68.4-42.372)=2.874$
+
+The first calculation shows the **score** for the 100% Bran cereal projected onto the first principal component line.  The second calculation shows the **score** for the 100% Bran cereal projected onto the second principal component line. We should also note that the calories (and rating) value is subtracted from its mean prior to multiplying on the loading value.     
+
+We can also ask R to give us these scores. Notice the scores are more accurate than our calculations above.   
+
+```{r prcomp.2.scores}
+
+scores<-pcs$x
+head(scores,5)
+```
+
+#### Reaching a Conclusion  
+
+As we have learned, the first principal component explains 86% of the variability in the data set. If we are to reduce our two dimensional data set down to one dimensional, we would use the first principal component. 
+
+### Extending to the 11th-Dimensional Cereals Data Set
+
+We can apply PCA to the entire cereals data set, provided that the following rules are followed:  
+
+*PCA only works on numeric variables.  
+*PCA does not work with missing values.  
+*Normalize the data set before performing PCA.  
+
+
+Here is an example of PCA where we have not normalized the data set. 
+
+
+```{r prcomp.all}
+pcs<-prcomp(cereals)
+summary(pcs)
+```
+
+```{r prcomp.all.varexp}
+pcs.variance.explained <-(pcs$sdev^2 / sum(pcs$sdev^2))*100
+barplot(pcs.variance.explained, las=2, xlab="Principal Component", ylab="% Variance Explained", main="Principal Components versus Percent of Variance Explained")
+```
+
+```{r prcomp.all.loadings}
+pcs$rotation
+```
+
+Notice that PC1 is dominated by sodium, which has a loading of 0.987. Furthermore, PC2 is dominated by potassium, which has a loading of -0.987. [Please note that the sign does not matter in PCA. We care about the magnitude.] Since both sodium and potassium are measured in milligrams while other variables are measured in grams or some other scale, the sodium and potassium variables have larger variances than the other variables. Hence, sodium and potassium are dominating in PCA.  
+
+Now let's see what PCA looks like when we normalize the data set first.  
+
+```{r prcomp.norm.all}
+pcs<-prcomp(cereals, scale. = T) #use scale option to z-normalize data set. 
+summary(pcs)
+```
+
+```{r prcomp.norm.all.varexp}
+pcs.variance.explained <-(pcs$sdev^2 / sum(pcs$sdev^2))*100
+barplot(pcs.variance.explained, las=2, xlab="Principal Component", ylab="% Variance Explained", main="Principal Components versus Percent of Variance Explained")
+```
+
+
+We note that the first two principal components only explain $64\%$ of the variability after we normalized the data set. When we applied PCA without normalizing the variables, we found that the first two principal components explained $96\%$ of the variability. 
+
+#### Picking the Number of Principal Components
+
+There is no right way to pick the number of principal components to represent the original data set. We want to choose the number of PCs that contains a large amount of variability in the original data set. "Large amount" is also difficult to pin down. Some people use arbitrary cut off values like 85% or 90%, but there's no theoretical basis for any of these decisions.  
+
+A "rule of thumb" approach does exist to help find the number of PCs. It is the familiar elbow method.  
+
+```{r screeplot}
+screeplot(pcs, type="line")
+```
+
+In the above screeplot, we would choose the number of PCs around the elbow, which is at 4 PCs.  
+
+#### Making Sense of the Principal Component Loadings
+
+How can we use the principal components to understand the structure of the cereals data set? Let's see! 
+
+```{r prcomp.norm.all.loadings}
+pcs$rotation
+```
+
+PC1: Large positive loadings for sodium, carbohydrates, and cups. Large negative loadings for fiber, potassium, and rating. PC1 is balancing among all of these variables. These cereals have high sodium content, carbohydrate amount, and large amount per serving (measured in cups). They are also low in fiber, potassium, and, hence, Consumer Reports ratings. 
+
+PC2: Large positive loadings for carbohydrates and rating. Large negative loadings for sugars, weight, and sodium. These cereals have high carbohydrates, low sugar, low sodium, low weight, and high Consumer Reports ratings.  
+
+PC3: Large positive loadings for sodium, carbohydrates, and weight. Only negative loading is sugar. These cereals have high sodium, carbs, and weight but low sugar.   
+
+PC4: Large positive loadings for weight, cups, and carbohydrates. Large negative loading for sodium. These cereals have large weight, cups per serving, and carbs but low in sodium.  
+
+
+
+### A Practical Application of PCA
+
+```{r kmeans}
+data <- scale(cereals)
+# Elbow Method for finding the optimal number of clusters
+set.seed(123)
+# Compute and plot wss for k = 2 to k = 15.
+k.max <- 15
+wss <- sapply(1:k.max, 
+ function(k){kmeans(data, k)$tot.withinss})
+wss
+plot(1:k.max, wss,
+ type="b", pch = 19, frame = FALSE, 
+ xlab="Number of clusters K",
+ ylab="Total within-clusters sum of squares")
+```
+
+
+In the elbow plot, the appropriate number of clusters for the cereals data set (at least the numeric variables) can be anywhere between 4 and 8. Since PCA analysis tells us that 4 PCs explain $83\%$ of the variability and 8 PCs explain $99\%$ of the variability, we can choose a k value between 4 to 8. If we want to keep the number of clusters as few as possible, 4 clusters would be sufficient.  
+
+PCA, thus, can help validate our chosen k value for cluster analysis. 
+
+
+
+```
+
+
+### Real use for PCA:  the opiods data (again!)
+How might we deal with 330 variables that could explain our target variable?
+
+```{r opioid again}
+prescribers<-read.csv("prescribers.csv") #or you can fully specify the pathname in the read command
+
+#View(prescribers)
+
+prescribers<-prescribers[,c(241,1:240,242:331)] #Rearranging the columns so that the target variable (opioid.prescriber) is in the first column
+
+prescribers$Male <-ifelse(prescribers$Gender=="M",1,0) #if Male = 1; if Female=0.
+prescribers<-prescribers[,-2] #We do not need the Gender variable anymore so delete it.
+
+#names(prescribers)
+
+dim(prescribers)
+
+table(prescribers$Opioid.Prescriber)
+
+
+# take out our target and scale everything
+prescribers_z <- scale(prescribers[,-1])
+```
+
+Okay, data are set up and ready to go
+
+```{r PCA drugs}
+pca_drugs<-prcomp(prescribers_z)
+summary(pca_drugs)
+```
+
+We can use half as many variables and get 81% of the variation?  Let's do it!
+
+```{r pca datasetup}
+#create dataset from PC
+prescribers_pca <- data.frame(prescribers$Opioid.Prescriber, pca_drugs$x[,1:150] )
+head(prescribers_pca)
+set.seed(123)
+
+trainIndex <- createDataPartition(prescribers_pca$prescribers.Opioid.Prescriber, p = .8,list = FALSE,times = 1)
+pca_train <- prescribers_pca[trainIndex,]
+pca_test <- prescribers_pca[-trainIndex,] #notice the minus sign
+
+prop.table(table(pca_train$prescribers.Opioid.Prescriber)) #notice the same proportion of opioid prescribers and non-prescribers.
+prop.table(table(pca_test$prescribers.Opioid.Prescriber))
+```
+
+Okay now for our DT model:
+```{r pca tree}
+set.seed(123)
+prescribers_rpart_pca <- rpart(pca_train$prescribers.Opioid.Prescriber~., method="class", parms = list(split="gini"), data=pca_train)
+
+prp(prescribers_rpart_pca, type=1, extra=1, split.font=1, varlen = -10)
+
+#prediction
+rpart_predict_pca <- predict(prescribers_rpart_pca, pca_test, type="class")
+
+```
+
+```{r metric_dt}
+
+confusionMatrix(rpart_predict_pca, pca_test$prescribers.Opioid.Prescriber, positive="yes")
+
+```
+
+Compare to full model
+```{r allvars DT}
+#run will all 330 variables
+
+trainIndex <- createDataPartition(prescribers$Opioid.Prescriber, p = .8,list = FALSE,times = 1)
+prescribers_train <- prescribers[trainIndex,]
+prescribers_test <- prescribers[-trainIndex,] #notice the minus sign
+
+
+set.seed(123)
+prescribers_rpart <- rpart(prescribers_train$Opioid.Prescriber~., method="class", parms = list(split="gini"), data=prescribers_train)
+
+rpart_predict <- predict(prescribers_rpart, prescribers_test, type="class")
+confusionMatrix(rpart_predict, prescribers_test$Opioid.Prescriber, positive="yes")
+
+```
+
+
+
+
+# LASSO Regression
+
+Principal components regression does not tell us which predictors are important (and not important) in predicting the target variable. An alternative exists that allow us to do two tasks at once: 1) reduce the dimension of a data set and 2) find the most informative predictors in the data set. Lasso regression is this alternative.  
+
+The lasso shrinks the coefficients of a regression model towards zero. If the shrunken regression coefficients are equal to zero, then the associated predictors drop out of the regression model. We end up with a sparse model. How does this happen? Here is the formulation of the lasso regression.  
+
+$\sum_{i=1}^{n}(y_{i}-\beta_{0}-\sum_{j=1}^{p}\beta_{j}x_{ij})^2 + \lambda\sum_{j=1}^{p}|\beta_{j}|=RSS+\lambda\sum_{j=1}^{p}|\beta_{j}|$
+
+The first term in the equation should look familiar as the usual OLS regression model. The second term in the equation shows the regression coefficient is "weighted" by a tuning parameter called $\lambda$. As the tuning parameter gets larger, the regression coefficient continues to shrink closer to  .
+
+Here's an example using the cereals data set.
+
+```{r cereals.lasso.dataprep}
+#notice that the train-test split is different from what we have seen
+set.seed(123)
+train<-sample(1:nrow(cereals),59) #80% train
+test<-(-train) #20% test
+
+x <- model.matrix(rating~., cereals.complete)[,-1] #this function creates a matrix for all numeric predictors and create dummy variables for the categorical variables. #the [,-1] option means to keep all predictors except for rating, which is the target variable. 
+#also note that we are using the entire cereal data set including the categorical varibles.
+
+head(x,5) # a view of the x matrix.
+
+y<- cereals.complete$rating
+```
+
+The lasso model is:
+
+```{r lasso.model}
+set.seed(123)
+lasso.model<-cv.glmnet(x[train,], y[train], alpha=1)
+#defaul is 10 fold cv 
+#alpha=1 is the option to do lasso regression
+```
+
+
+Now let's use the fitted lasso model to make predictions. 
+
+```{r lasso.pred.cereals}
+lasso.pred<-predict(lasso.model, newx=x[test,]) #default tuning parameter is lambda.1se, which is the tuning parameter within one standard error of the smallest cross validation mean squared error.
+
+lasso.pred.df <- as.data.frame(lasso.pred)
+lasso.pred.df$actual.rating <-cereals.complete[test,15]#column 15 is rating
+
+MSE<- mean((lasso.pred.df$`1` - lasso.pred.df$actual.rating)^2)
+RMSE<-sqrt(MSE)
+
+print(MSE)
+print(RMSE)
+```
+
+Our lasso regression model performs better than the principal components regression, but we still have not examined the part where lasso reduces the dimension of the data set.  
+
+```{r reduce}
+lasso.coef<-predict(lasso.model, type="coefficients")
+lasso.coef
+```
+
+As we can see, 6 regression coefficient estimates are 0 so these predictors drop out. 
+
+How does lasso compare to OLS? Take a look at the adjusted R-square. Are we overfitting? 
+
+```{r cereals.ols}
+training <- cereals.complete[train,]
+testing <- cereals.complete[test,]
+testing.norating<-testing[,-15]
+
+set.seed(123)
+ols.model <- lm(rating~.-type, data=training) #had to remove type so model can run for predict statement. only one hot cereal in training set so lm cannot estimate a regression coefficient. 
+summary(ols.model)
+
+ols.pred <- predict(ols.model, newdata=testing.norating)
+ols.pred.df<-as.data.frame(ols.pred)
+ols.pred.df$actual.rating<-testing[,15]
+
+MSE <-mean((ols.pred.df$ols.pred - ols.pred.df$actual.rating)^2)
+RMSE <- sqrt(MSE)
+
+print(MSE)
+print(RMSE)
+```
+

@@ -1,0 +1,220 @@
+---
+title: 'HW #2'
+author: "Steven Brannum"
+date: '`r Sys.Date()`'
+output:
+  html_document: default
+  word_document: default
+---
+
+# Dataset
+```{r}
+#CRASH <- read.csv("D:/OneDrive/SP18/Applied Data Mining - BIA 6301 BSB/HW2/HW2/HW2/crash.csv")
+CRASH <- read.csv("C:/Users/User/SkyDrive/SP18/Applied Data Mining - BIA 6301 BSB/HW2/HW2/HW2/crash.csv")
+```
+
+
+```{r EDA}
+dim(CRASH)
+head(CRASH)
+colnames(CRASH)
+summary(CRASH)
+
+
+
+length(CRASH$Age != "")
+length(CRASH$Crash.Date != "")
+length(CRASH$Roadway != "")
+sum(CRASH$Drug.Involvement == "Yes")
+
+table(CRASH$Age >= 16)
+table(CRASH$Roadway)
+table(CRASH$Crash.Date.month)
+table(CRASH$Atmospheric.Condition)
+table(CRASH$Injury.Severity)
+table(CRASH$Alcohol.Results)
+# gets all rows where drug involvment is yes
+involvedOverSixteen <- CRASH[which(CRASH$Age >= 16),]
+
+dim(involvedOverSixteen)
+```
+
+
+Turn states into region factors.
+
+```{r Data prep}
+labels.midwest <- c("Illinois", "Indiana", "Michigan", "Ohio", "Wisconsin", "Iowa", "Kansas", "Minnesota", "Missouri", "Nebraska", "North Dakota", "South Dakota")
+labels.northeast <- c("Connecticut", "Maine", "Massachusetts", "New Hampshire", "Rhode Island", "Vermont", "New Jersey", "New York", "Pennsylvania")
+labels.south <- c("Delaware", "Florida", "Georgia", "Maryland", "North Carolina", "South Carolina", "Virginia", "District of Columbia", "West Virginia", "Alabama", "Kentucky", "Mississippi", "Tennessee", "Arkansas", "Louisiana", "Oklahoma", "Texas")
+labels.west <- c("Arizona", "Colorado", "Idaho", "Montana", "Nevada", "New Mexico", "Utah", "Wyoming", "Alaska", "California", "Hawaii", "Oregon", "Washington")
+
+
+#verifying we have all the states
+length(labels.midwest)
+length(labels.northeast)
+length(labels.south)
+length(labels.west)
+
+# get count of observations by label
+table(CRASH$State %in% labels.midwest)
+table(CRASH$State %in% labels.northeast)
+table(CRASH$State %in% labels.south)
+table(CRASH$State %in% labels.west)
+
+table(CRASH$Region)
+
+CRASH$Region <- CRASH$State
+levels(CRASH$Region) <- list('midwest' = labels.midwest, 'northeast' = labels.northeast, 'south' = labels.south, 'west' = labels.west)
+head(CRASH)
+
+#remove columns
+CRASH <- CRASH[, - c(1, 2, 3, 4, 6, 7, 8, 9, 10, 12, 13, 15, 16)]
+
+
+head(CRASH)
+length(grep("Urban", CRASH$Roadway))
+length(grep("Rural", CRASH$Roadway))
+
+#replace hyphens with space
+CRASH$Roadway <- gsub('-', ' ', CRASH$Roadway)
+head(CRASH)
+
+#remove everything after first space
+CRASH$Roadway <- gsub(' [A-z ]*', '', CRASH$Roadway)
+head(CRASH)
+
+
+#remove observations with unreported or unknown genders
+CRASH <- CRASH[!( CRASH$Gender == "Not Reported" | CRASH$Gender == "Unknown"),]
+table(CRASH$Gender)
+
+
+#remove observations missing roadways
+CRASH <- CRASH[!(CRASH$Roadway == "Unknown" | CRASH$Roadway == "N" | CRASH$Roadway == "" | CRASH$Roadway == '\\N'),]
+table(CRASH$Roadway)
+
+#remove injury severity
+#CRASH <- CRASH[, - c(3)]
+
+# convert months into strings so they are treated as categories
+CRASH$Crash.Date.month <- as.character(CRASH$Crash.Date.month)
+
+
+library(cluster)
+library(fpc)
+library(klaR)
+library(clustMixType)
+library(dplyr)
+library(dummies)
+```
+
+
+```{r Gowers and k-medoids}
+#daisy() function is in the cluster package. 
+
+
+crash_cat_dummies <- dummy.data.frame(CRASH, sep = ".")
+summary(crash_cat_dummies)
+
+dis.matrix.gower <- daisy(crash_cat_dummies, metric="gower")
+
+#not necessary to do the following two lines but we want to view the gower measures.
+gower.matrix <- as.matrix(dis.matrix.gower) #convert to matrix for viewing 
+```
+
+```{r echo=T, results='hide'}
+gower.matrix[1,] #view gower measures for first cereal
+```
+
+```{r gower.pam}
+set.seed(123)
+crash_cat_dummies_gower_pam <- pam(dis.matrix.gower, k=4)
+
+CRASH$cluster_gower_pam <- crash_cat_dummies_gower_pam$clustering #assign cluster ID to each observation
+
+#view each cluster
+gower_sub1 <- subset(CRASH, cluster_gower_pam==1)
+gower_sub2 <- subset(CRASH, cluster_gower_pam == 2)
+gower_sub3 <- subset(CRASH, cluster_gower_pam == 3)
+gower_sub4 <- subset(CRASH, cluster_gower_pam == 4)
+
+head(CRASH)
+
+table(gower_sub1$Gender)
+table(gower_sub2$Gender)
+table(gower_sub3$Gender)
+table(gower_sub4$Gender)
+
+table(gower_sub1$Roadway)
+table(gower_sub2$Roadway)
+table(gower_sub3$Roadway)
+table(gower_sub4$Roadway)
+
+table(gower_sub1$Region)
+table(gower_sub2$Region)
+table(gower_sub3$Region)
+table(gower_sub4$Region)
+
+table(gower_sub1$Crash.Date.month)
+table(gower_sub2$Crash.Date.month)
+table(gower_sub3$Crash.Date.month)
+table(gower_sub4$Crash.Date.month)
+
+summary(gower_sub1)
+summary(gower_sub2)
+summary(gower_sub3)
+summary(gower_sub4)
+
+
+```
+
+
+
+```{r K-Modes}
+#We do not want to include the cluster assignment columns from hot coding and gower. 
+
+head(CRASH[, 1:4])
+
+crash_cat_kmodes <- kmodes(CRASH[, 1:4], modes = 4, iter.max = 10)
+```
+
+```{r echo=T, results='hide'}
+crash_cat_kmodes #print summary of kmodes
+```
+
+
+```{r}
+
+CRASH$cluster_kmodes <- crash_cat_kmodes$cluster
+
+kmodes_sub1 <- subset(CRASH, cluster_kmodes == 1)
+kmodes_sub2 <- subset(CRASH, cluster_kmodes == 2)
+kmodes_sub3 <- subset(CRASH, cluster_kmodes == 3)
+kmodes_sub4 <- subset(CRASH, cluster_kmodes == 4)
+
+
+table(kmodes_sub1$Region)
+table(kmodes_sub2$Region)
+table(kmodes_sub3$Region)
+table(kmodes_sub4$Region)
+
+table(kmodes_sub1$Gender)
+table(kmodes_sub2$Gender)
+table(kmodes_sub3$Gender)
+table(kmodes_sub4$Gender)
+
+table(kmodes_sub1$Roadway)
+table(kmodes_sub2$Roadway)
+table(kmodes_sub3$Roadway)
+table(kmodes_sub4$Roadway)
+
+table(kmodes_sub1$Crash.Date.month)
+table(kmodes_sub2$Crash.Date.month)
+table(kmodes_sub3$Crash.Date.month)
+table(kmodes_sub4$Crash.Date.month)
+
+summary(kmodes_sub1)
+summary(kmodes_sub2)
+summary(kmodes_sub3)
+summary(kmodes_sub4)
+```

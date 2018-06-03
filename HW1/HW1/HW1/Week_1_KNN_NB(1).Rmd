@@ -1,0 +1,424 @@
+---
+title: "Week 1 Intro to Classification Models: knn and Naive Bayes"
+author: "San Cannon and Xuan Pham"
+output: html_document
+---
+
+# R Packages
+
+The packages you will need to install for the week are **knitr**, **class**, **e1071**, **fnn**, and **dummies**
+
+
+# Classification Models
+
+Our task for this week is to create models that predict categorical class labels. In particular, we will look at two classifical models: **naive bayes** and **k-nearest neighbor (knn)**.
+
+
+These are **supervised** learning algorithms. 
+
+`
+* Naive Bayes *
+
+Like other classifiers, Naive Bayes classifiers look to sort items into buckets.  These classifiers use probabilities to make decisions on how to classify items.  The basic idea is:
+Find out the probability of the previously unseen instance
+belonging to each class, then simply pick the most probable class.
+ 
+# Probability refresher
+* Prior probability: $P(A)$ - probability of event A occuring
+* Joint probability: $P(A \cap B)= P(A,B)$ - the probability of events A **and** B both occuring
+* Conditional probability: $P(A \mid B)$ - probability of event A occuring given that event B has occurred.  Not necessarily the same as $P(B \mid A)$ which is the probability that B occurs given that A has occured.
+* Relationship between prior, joint, and conditional: 
+$P(A,B) = P(B \mid A)P(A) = P(A \mid B)P(B)$
+* Independence: A is independent of B if $P(A \mid B) = P(A)$ 
+
+
+Use these relationships to get Bayes' rule:
+$$ P(A \mid B) = \frac{P(B \mid A) \, P(A)}{P(B)} $$
+
+where
+ * $P(A \mid B)$ = probability of instance B being in class A. This is what we are trying to compute
+* $P(B \mid A)$ = probability of generating instance B given class A. We can imagine that being in class A causes you to have feature B with some probability
+* $P(A)$ = probability of occurrence of class A. This is just how frequent the class A is in our data set
+* $P(B)$ = probability of instance B occurring.  This will be the same for all classes so you may not need to use it. 
+
+We are making follow up customer calls and we get to a customer called "Drew".  There is no salutation noted and the "Sex" field in the database is blank.  How do we address "Drew"?
+
+Well we know that we have two classes
+$c1$ = male, and $c2$ = female.
+
+Classifying "Drew" as male or female is
+equivalent to asking if it is more probable
+that "Drew" is male or female. That is:  which is
+greater $p(male | drew)$ or $p(female | drew)$
+Are we calling Drew Carey or Drew Barrymore?
+
+
+$$ P(Male \mid Drew) = \frac{P(Drew \mid Male) \, P(Male)}{P(Drew)} $$
+
+compared to:
+
+
+$$ P(Female \mid Drew) = \frac{P(Drew \mid Female) \, P(Female)}{P(Drew)} $$
+
+Say these are the clean entries in our data:
+
+| **Name**    | **Sex**    |
+|---------|--------|
+| Drew    | Male   |
+| Claudia | Female |
+| Drew    | Female |
+| Drew    | Female |
+| Alberto | Male   |
+| Karin   | Female |
+| Nina    | Female |
+| Sergio  | Male   |
+
+$p(male | drew) = \frac {1/3 * 3/8}{3/8} = \frac{0.125}{3/8}$
+
+$p(female | drew) = \frac {2/5 * 5/8}{3/8} = \frac{0.250}{3/8}$
+
+It is more likely that our customer is female so we should probably address "Drew" as "Ms." 
+
+What if we have more information?  How do we use more attributes to improve the percentages?
+
+What if our data looked like this?
+
+
+| **Name**    | **Over 5ft7in **| **Eyes**  |**Hair** | **Sex**    |
+|---------|-------------|-------|-------|--------|
+| Drew    | No          | Blue  | Short | Male   |
+| Claudia | Yes         | Brown | Long  | Female |
+| Drew    | No          | Blue  | Long  | Female |
+| Drew    | No          | Blue  | Long  | Female |
+| Alberto | Yes         | Brown | Short | Male   |
+| Karin   | No          | Blue  | Long  | Female |
+| Nina    | Yes         | Brown | Short | Female |
+| Sergio  | Yes         | Blue  | Long  | Male   |
+
+
+
+What are the conditional probabilities?
+
+| Sex    | Over 5f7in | P   |
+|--------|------|-----|
+| Male   | Yes  | 2/3 |
+| Male   | No   | 1/3 |
+| Female | Yes  | 2/5 |
+| Female | No   | 3/5 |
+
+| Sex    | Eyes | P   |
+|--------|------|-----|
+| Male   | Blue | 2/3 |
+| Male   | Brown | 1/3 |
+| Female | Blue | 2/5 |
+| Female | Brown| 3/5 |
+
+| Sex    | Hair | P   |
+|--------|------|-----|
+| Male   | Long | 1/3 |
+| Male   | Short| 2/3 |
+| Female | Long | 4/5 |
+| Female | Short| 1/5 |
+
+So our calculations are:
+
+$p(male | drew) = {2/3 * 2/3 * 1/3} = .148$
+
+$p(female | drew) = {2/5 *3/5 *4/5 } = .192$
+
+```{r drew_calc}
+library(e1071)
+
+#create dataframe - note that cust_data has 9 rows but sex only has 8.  The "unknown" Drew is the last row of the DF.  
+
+names <- c("Drew","Claudia","Drew","Drew","Alberto","Karin","Nina","Sergio","Drew")
+over57 <-c("No","Yes","No","No","Yes","No","Yes","Yes","Yes")
+eyes <- c("Blue","Brown","Blue", "Blue","Brown","Blue","Brown","Blue","Blue")
+hair <- c("Short","Long","Long","Long","Short","Long","Short","Long","Long")
+sex <- c("Male","Female","Male","Male","Male","Female","Female","Female")
+names<-as.factor(names)
+over57 <-as.factor(over57)
+eyes<- as.factor(eyes)
+hair<-as.factor(hair)
+sex<- as.factor(sex)
+cust_data <-data.frame(names,over57,eyes,hair)
+cust_data
+
+#split data into known Drew's and our unknown Drew
+train <- cust_data[1:8,]
+test <- cust_data[9,]
+
+
+#train model
+drew_classifier <- naiveBayes(sex ~ ., data = train)
+drew_classifier
+
+# Our Drew is the last row - what's the verdict?
+predict(drew_classifier, test)
+
+
+
+```
+# k-Nearest Neighbor (kNN): A Lazy Classification Model
+
+kNN is called a "lazy learner" because it does not perform abstraction. Lantz (2013) noted:
+
+*In a single sentence, nearest neighbor classifiers are defined by their characteristics of classifying unlabeled examples by assigning them the class of the most similar labeled examples* (Lantz 2013, p. 66).
+
+When comparing among neighbors, we need to use a distance function. The most common way to measure distance is **Euclidean distance**, or the shortest direct route. 
+
+![](https://www.packtpub.com/sites/default/files/Article-Images/B03905_01_04.png)
+
+
+
+
+![](http://web.stonehill.edu/compsci/cs211/assignments/assign14.jpg)
+
+
+
+# How many neighbors (k)?
+
+
+When choosing the number of k, we need to consider the **bias-variance tradeoff**. A large k reduces the variance caused by noisy data but can cause bias in that we risk ignoring small (and important) patterns (Lantz 2013, p. 71).
+
+
+# kNN requires data transformation into a standard range. 
+
+
+## Min-Max Normalization
+
+![](https://cdn-images-1.medium.com/max/800/0*GQifNArAb4PPGJ6n.jpg)
+Also see page 73 of Lantz text
+
+# Z score standardization
+Min-max isn't the only kind of standardization:
+
+
+![](https://s-media-cache-ak0.pinimg.com/originals/70/db/af/70dbaf3b130b15f952abadf8d6f10fbf.jpg)
+
+
+![](https://statistics.laerd.com/statistical-guides/img/Standard_Score_Calc.gif)
+
+How would the KNN model classify the new Drew? Knn needs numeric data not factors so we need to create dummy variables.  
+
+Why is that?  Because KNN relies on distances and the dummy variables allow for distance calculation. 
+```{r knn prep}
+head(cust_data)
+
+
+library(dummies)
+
+# example data
+dummy.df <- dummy.data.frame(cust_data, sep = ":")
+
+
+dummy.df
+
+train <- dummy.df[1:8,]
+test <- dummy.df[9,]
+
+
+```
+
+
+We will use the **class** package to perform kNN.  
+
+```{r knn drew}
+
+library(class)
+
+# What about our new Drew?
+
+set.seed(123)
+pred_knn<-knn(train=train, test=test,cl=sex, k=2)
+pred_knn
+
+
+```
+In reality, we will be dealing with much larger data sets and we will want to predict outcomes for more than one case.  Let's see what happens with some "real" data. 
+
+
+# Background on the Drug Overdose Epidemic
+
+
+In 2015, Angus Deacon and Anne Case, economists (and husband and wife!) from Princeton University, published a [startling study](http://www.nytimes.com/2015/11/03/health/death-rates-rising-for-middle-aged-white-americans-study-finds.html). Deacon and Case found that mortality rate for middle aged (45 to 54 years old) non-Hispanic whites with a high school education or lower increased between 1999 and 2014, even though the mortality rates for all other age and racial groups were declining. This trend was happening even as the mortality rates of middle aged whites in other developed countries were declining. Deacon and Case found that the causes of death among less educated middle aged white Americans include suicide, alcohol, and drug overdose. 
+
+
+Since the publication of the Deacon & Case study, public interest in the drug overdose epidemic has increased. Gina Kolata and Sarah Cohen (2016) of the *New York Times* analyzed 60 million death certificates between 1999 and 2014 and found that the mortality rates among American non-Hispanic whites across all age groups under 65 years old were either rising or flattening. Kolata and Cohen reported: 
+
+**In 2014, the overdose death rate for whites ages 25 to 34 was five times its level in 1999, and the rate for 35- to 44-year-old whites tripled during that period. The numbers cover both illegal and prescription drugs....Rising rates of overdose deaths and suicide appear to have erased the benefits from advances in medical treatment for most age groups of whites** [Kolata and Cohen 2016](http://www.nytimes.com/2016/01/17/science/drug-overdoses-propel-rise-in-mortality-rates-of-young-whites.html).
+
+# Map of U.S. Opiate Overdose Death Rate
+
+[](https://www.kaggle.io/svf/441409/8c6ea1a2aa8cec052ca7959d43ad34a0/__results___files/figure-html/unnamed-chunk-21-1.png)
+
+
+
+# The Dataset
+
+We will be working with a dataset posted on [Kaggle](https://www.kaggle.com/apryor6/us-opiate-prescriptions) by Alan Pryor Jr. The dataset includes non-opioid prescription records and demographic information of 25,000 licensed medical professionals. The prescriptions were written for individuals covered under Class D Medicare. The source of the data is from the [Center for Medicare and Medicaid Services] (https://www.cms.gov/).
+
+The dataset contains the following information:
+
+*Gender of licensed medical professional
+
+*Number of prescriptions written for each of 239 common non-opiate drugs in 2014 by the licensed medical professional
+
+*A series of dummy variables for the state in which the medical professional practiced
+
+*A series of dummy variables for the medical professional's specialty
+
+*A factor variable named "Opioid.Prescriber" indicating whether the medical professional wrote at least 10 prescriptions for opioid drugs in 2014
+
+
+# Prediction Goal
+
+Can we build a model to predict whether a medical professional is likely to be an opioid prescriber? Additionally, can we identify predictors that tell us if a medical professional is more likely to prescribe opioids?
+
+
+# Exploratory Data Analysis
+
+```{r setup}
+prescribers<-read.csv("D:/Source Control/ADM/HW1/HW1/prescribers.csv")
+
+#View(prescribers)
+
+prescribers<-prescribers[,c(241,1:240,242:331)] #Rearranging the columns so that our target variable is first
+
+
+dim(prescribers)
+
+#run names() if you want to see the list of all the variables. 
+names(prescribers)
+
+table(prescribers$Opioid.Prescriber)
+```
+## Naive Bayes model ##
+Our target variable is Opiod.Prescriber.  Let's build a NB prediction model for that variable.First we split data into a training data set and a test dataset.  Similar to what we did for the known and unknown customers. We'll split things up so that we use 80% of the data to train the model and 20% of the data to test the model.
+```{r NB opiod}
+#
+prescribers_train<-prescribers[1:20000, ]
+prescribers_test<-prescribers[20001:25000, ]
+
+
+#train model
+prescribers_nb<- naiveBayes(Opioid.Prescriber ~ ., data = prescribers_train)
+#prescribers_nb - prints out all the conditional probabilities
+
+
+```
+
+
+Now we can use this model to try to predict the 20% in the test dataset.
+```{r predict nb}
+
+nb_pred <- predict(prescribers_nb, prescribers_test)
+nb_tabs <- table(nb_pred,prescribers_test$Opioid.Prescriber)
+nb_tabs
+prop.table(nb_tabs)
+
+```
+
+
+## KNN prediction ##
+
+In our prescribers dataset, we have two factors: Gender and Opioid.Prescriber. We will leave the Opioid.Prescriber alone since this is our target variable. We need to change Gender into a dummy variable so that it will be on the same 0,1 scale as our other variables (once we perform min-max normalization).
+
+
+```{r recode}
+prescribers$Male <-ifelse(prescribers$Gender=="M",1,0) #if Male = 1; if Female=0.
+prescribers<-prescribers[,-2] #We do not need the Gender variable anymore.
+
+#names(prescribers)
+```
+
+Here is the breakdown of the 331 variables:
+
+Column 1: target variable 
+
+Columns 2-240: number of prescriptions written for each non-opioid drug
+
+Columns 241-291: state dummy variables
+
+Columns 292-330: medical speciality dummy variables
+
+Column 331: dummy variable for male (i.e. gender)
+
+We need to do min-max normalization for columns 2-240 and then add that with our other colums (already on the 0-1 scale).
+
+
+```{r minmax}
+drugs<-prescribers[,2:240]
+normalize<- function(x){return((x-min(x))/(max(x)-min(x)))}
+drugs_n<-as.data.frame(lapply(drugs, normalize))
+```
+
+
+
+Let's check our work to see if we did it correctly!
+
+
+```{r summary}
+summary(drugs$ABILIFY) #Range was between 0 and 770
+summary(drugs_n$ABILIFY) #Notice the range is now between 0 and 1
+```
+
+Now we are going to combine the normalized variables with our dummy variables and the target variable.
+
+
+```{r cleanup}
+prescribers_n<-cbind(prescribers[,c(1,241:331)], drugs_n[,])
+
+prescribers_n<-prescribers_n[complete.cases(prescribers_n),]
+```
+
+We'll do a similar split for our transformed data
+
+```{r new neighbor}
+prescribers_n_train <- prescribers_n[1:20000,2:331]
+prescribers_n_test <- prescribers_n[20001:25000,2:331]
+
+prescribers_n_train_labels<-prescribers_n[1:20000,1]
+prescribers_n_test_labels<-prescribers_n[20001:25000,1]
+```
+How does KNN classify the new neighbor? Depends on K
+
+Lantz (2015) suggested starting with k = square root of the number of observations & using an odd k (page 82).  
+
+```{r knn opioid}
+
+set.seed(123)
+prescribers_pred_knn<-knn(train=prescribers_n_train, test=prescribers_n_test,cl=prescribers_n_train_labels, k=141)
+
+
+
+knn_n_tabs <- table(prescribers_n_test_labels,prescribers_pred_knn)
+knn_n_tabs
+prop.table(knn_n_tabs)
+
+```
+Remember that there are other ways to standardize data for KNN.  What happens if we use Z scores instead of min-max?
+
+
+
+```{r zscore}
+prescribers_z <- as.data.frame(scale(prescribers[-1]))
+
+summary(prescribers$ABILIFY)
+
+summary(prescribers_z$ABILIFY) #notice that the max value is not compressed towards 1.
+
+prescribers_z_train<-prescribers_z[1:20000, ]
+prescribers_z_test<-prescribers_z[20001:25000, ]
+
+prescribers_z_train_labels<-prescribers[1:20000,1]
+prescribers_z_test_labels<-prescribers[20001:25000,1]
+
+set.seed(123)
+prescribers_z_pred <- knn(train=prescribers_z_train, test=prescribers_z_test, cl=prescribers_z_train_labels, k=141)
+
+knn_z_tabs <- table(prescribers_z_test_labels,prescribers_z_pred)
+knn_z_tabs
+prop.table(knn_z_tabs)
+```
+

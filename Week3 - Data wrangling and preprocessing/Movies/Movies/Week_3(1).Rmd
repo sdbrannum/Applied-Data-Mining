@@ -1,0 +1,295 @@
+---
+title: 'Week 3: Preprocessing, partitioning, and cross validation'
+author: "San Cannon"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# Packages Required  
+
+The packages you will need for this week are **caret**
+
+
+# Data Preprocessing 
+
+## Let's Talk Data Quality
+
+According to Han, Kamber, and Pei (2012), data quality consists of six elements:  
+
+* Accuracy  
+* Completeness  
+* Consistency  
+* Timeliness  
+* Believability  
+* Interpretability  
+
+Achieving a high level of data quality is the reason for data preprocessing.
+
+Link to a section from [Han, Kamber, and Pei text](http://mercury.webster.edu/aleshunas/Support%20Materials/Data_preprocessing.pdf)
+
+## Two Tasks of Data Preprocessing  
+
+* Data Cleaning: fill in missing values; smoothing noisy data; identifying and removing outliers; and resolving inconsistencies.  
+
+* Data Transformation: normalization; discretization; and concept hierarchy generation.  
+
+
+## Dataset 
+
+We are going to examine a dataset containing 5,000+ movies from IMDb. The owner of the data set is [Chuan Sun](https://nycdatascience.com/blog/student-works/machine-learning/movie-rating-prediction/).  
+
+```{r}
+IMDb<-read.csv("C:/Users/User/SkyDrive/SP18/Applied Data Mining - BIA 6301 BSB/Week3 - Data wrangling and preprocessing/Movies/Movies/movie_metadata.csv", stringsAsFactors = FALSE)
+dim(IMDb)
+head(IMDb)
+```
+
+### Exploratory Data Analysis  
+
+Here are the numeric columns in this data set:  
+
+| Column.Name              | Position | 
+|--------------------------|----------|
+| num_critic_for_reviews   | 3        |
+| duration                 | 4        |   
+| director_facebook_likes  | 5        |
+| actor_3_facebook_likes   | 6        |  
+| actor_1_facebook_like    | 8        |
+| gross                    | 9        |
+| num_voted_users          | 13       |
+| cast_total_facebook_likes| 14       |
+| facenumber_in_poster     | 16       |
+| num_user_for_reviews     | 19       |
+| budget                   | 23       |
+| actor_2_facebook_likes   | 25       |
+| imdb_score               | 26       |
+| aspect_ratio             | 27       |
+| movie_facebook_likes     | 28       |
+| title_year               | 24       |
+
+
+
+And the non-numeric columns:  
+
+| Column.Name              | Position | 
+|--------------------------|----------|
+| color                    | 1        |
+| director_name            | 2        |   
+| actor_2_name             | 7        |
+| genres                   | 10       |  
+| actor_1_names            | 11       |
+| movie_title              | 12       |
+| plot_keywords            | 17       |
+| movie_imdb_link          | 18       |
+| language                 | 20       |
+| country                  | 21       |
+
+
+#### Challenge: Part #1 
+
+A major flaw exists in one of the variables in this dataset. Can you use exploratory data analysis to find the problematic variable? Hint: It's a numeric variable. 
+
+[Insert your code]
+
+
+```{r cleanup}
+newmovie <- IMDb[ which(IMDb$country=='USA'), ]
+dim(newmovie)
+```
+
+
+
+## Plot Keywords & Genres
+
+Only the first five plot keywords are captured from the web scrapping exercise. Here's the full IMDB page for the movie [Avatar](http://www.imdb.com/title/tt0499549/?mode=desktop&ref_=m_ft_dsk).
+
+```{r count keywords}
+keywords<- strsplit(newmovie$plot_keywords, "\\|")
+plot_keys_count <- as.data.frame(table(unlist(keywords)))
+plot_key_top_n <- plot_keys_count[order(-plot_keys_count$Freq),]
+
+plot_key_top_n <- plot_key_top_n[-6,] #remove blank
+
+head(plot_key_top_n,20)
+barplot(plot_key_top_n$Freq[1:20], names.arg= plot_key_top_n$Var1[1:20],  las=2, cex.names  = .7)
+```
+
+
+
+
+# Data Transformation
+
+## Discretization & Concept Hierarchies
+
+Discretization is the process of turning a numeric attribute into interval labels. The purpose of discretization is to reduce the number of unique values in the data mining process. This is particularly useful for large datasets.
+
+Concept hierarchies replace "lower level" raw data with "higher level" categories.
+
+```{r duration}
+newmovie2 <- newmovie
+newmovie2<-newmovie2[,c(3:6,8:9,13:14,16,19,23,25:28)] #numeric variables
+
+
+summary(newmovie2$duration) #notice the 6 NA cases
+```
+
+How can we categorize "duration" if we don't want to use the actual minutes?
+
+
+
+### Using Histogram
+
+Most movies are between 100 to 150 minutes.
+
+```{r duration.hist}
+hist(newmovie2$duration)
+summary(newmovie2$duration)
+
+newmovie2$movie_length_hist<-
+  ifelse(newmovie2$duration<=100,"Short",
+    ifelse (newmovie2$duration<=150, "Average",
+      ifelse(newmovie2$duration<=511, "Long",
+        ifelse(is.na(newmovie2$duration), "NA"))))
+
+table(newmovie2$movie_length_hist) 
+# does not report the NA observations but they are still there.
+# 1979 "Average" + 143 "Long" + 1679 "Short" = 3801. There are 3,807 total observations. So yes, still 6 NA cases.
+```
+## Creating binary variables
+
+What if we don't want so many classes?  What if we just want to know if people "like" a movie or not? How might we do that?
+
+What is the "average" number of "likes?"
+```{r meanlike}
+summary(newmovie2$movie_facebook_likes)
+```
+What if we say a movie is "popular" if it gets more than average FB likes and not popular if it doesn't?
+
+```{r like_binary}
+newmovie2$popular <- ifelse(newmovie2$movie_facebook_likes >= mean(newmovie2$movie_facebook_likes), 1, 0)
+
+table(newmovie2$popular)
+```
+Do we like this definition?  There are a lot of "unpopular movies".  What if mean isn't the right comparison?  What about median?
+```{r like_median}
+newmovie2$popular <- ifelse(newmovie2$movie_facebook_likes >= median(newmovie2$movie_facebook_likes), 1, 0)
+
+table(newmovie2$popular)
+```
+
+## Normalization
+
+Normalization is when numeric attribute is transformed to be on a smaller scale. Normalization is useful for data mining techniques that uses a distance measure (knn; cluster analysis).
+
+### Min-Max Normalization
+
+![](https://cdn-images-1.medium.com/max/800/0*GQifNArAb4PPGJ6n.jpg)
+
+
+```{r budget.minmax}
+
+normalize<- function(x,na.rm=TRUE){(x-min(x,na.rm=TRUE))/(max(x,na.rm=TRUE)-min(x.na.rm=TRUE))}
+newmovie2$budget_norm<-normalize(newmovie2$budget)
+
+summary(newmovie2$budget_norm) #Checking the range
+```
+
+
+### Z-Score Normalization (Or Mean Zero Normalization)
+
+![](https://s-media-cache-ak0.pinimg.com/originals/70/db/af/70dbaf3b130b15f952abadf8d6f10fbf.jpg)
+
+![](https://statistics.laerd.com/statistical-guides/img/Standard_Score_Calc.gif)
+
+
+```{r budget.scale}
+newmovie2$budget_z<-(newmovie2$budget - mean(newmovie2$budget,na.rm=TRUE))/sd(newmovie2$budget,na.rm=TRUE)
+
+summary(newmovie2$budget_z)
+
+#Alternatively, the scale() function in base R does the same thing: 
+summary(scale(newmovie2$budget))
+```
+
+  
+### Z Normalization with Mean Absolute Deviation (MAD)
+
+More robust to outliers.
+
+```{r budget.mad}
+newmovie2$budget_z_mad<-(newmovie2$budget - mean(newmovie2$budget,na.rm=TRUE))/mad(newmovie2$budget,na.rm=TRUE)
+summary(newmovie2$budget_z_mad)
+```
+
+
+### Decimal Scaling
+![](https://image.slidesharecdn.com/statdm-110906051117-phpapp01/95/statistics-and-data-mining-26-728.jpg?cb=1315286218)
+
+```{r budget.decscale}
+max_budget<-max(newmovie2$budget, na.rm=TRUE)
+
+digits <- floor(log10( max_budget))+1
+
+print(digits)
+
+newmovie2$budget_decimal<-(newmovie2$budget)/(10^(digits))
+
+summary(newmovie2$budget_decimal)
+```
+
+Note: Digits code chunk above is from [here](http://stackoverflow.com/questions/6655754/finding-the-number-of-digits-of-an-integer)
+
+
+Let's clean up what we have done.  
+
+```{r budget.clean.up}
+newmovie2$budget_norm<-NULL
+newmovie2$budget_z_mad<-NULL
+newmovie2$budget_z<-NULL
+newmovie2$budget_decimal<-NULL
+```
+
+
+# Partitioning
+Let's say we want to predict whether a movie is popular using our new variable. 
+
+If we want to randomize our data before splitting it into our test and training sets, how do we do that?
+
+##### Approach #1: Random Draws 
+```{r random.draws}
+set.seed(1234) #set a seed to do draws from a random uniform distribution.
+split_num <-round(dim(newmovie2)[1]*.8)
+
+newmovie2_random_draws <- newmovie2[order(runif(round(dim(newmovie2)[1]))), ] 
+newmovie2_train <- newmovie2_random_draws[1:split_num, ] #Training data set; 
+newmovie2_test  <-newmovie2_random_draws[(split_num+1):dim(newmovie2)[1],]
+
+dim(newmovie2_train)
+dim(newmovie2_test)
+prop.table(table(newmovie2_train$popular)) 
+prop.table(table(newmovie2_test$popular))
+```
+##### Approach #3: Using caret 
+
+```{r random.draws.caret}
+library(caret)
+set.seed(123)
+trainIndex <- createDataPartition(newmovie2$popular, p = .8,list = FALSE,times = 1)
+newmovie2_train <- newmovie2[trainIndex,]
+newmovie2_test <- newmovie2[-trainIndex,] #notice the minus sign
+
+dim(newmovie2_train)
+dim(newmovie2_test)
+prop.table(table(newmovie2_train$popular)) 
+prop.table(table(newmovie2_test$popular))
+```
+
+
+# Class Challenge: Part #2  
+
+Can you use EDA to come up with a definition for a blockbuster movie? What variable(s) would you look at and why?  
+
+
+

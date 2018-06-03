@@ -1,0 +1,492 @@
+---
+title: "Model Evaluation and Tuning"
+author: "Xuan Pham and San Cannon"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# R Packages
+
+The packages you will need to install for the week are **caret**, **ROCR**, **knitr**, **e1071**, **class**, **rpart** and **rpart.plot**.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(ROCR)
+library(knitr)
+library(e1071)
+library(class)
+
+
+options(scipen=999)
+
+```
+
+# Part 1: Evaluating Single Model Performance
+
+We've worked with the basic metric of accuracy.  Is that enough?  
+Let's look at the confusion matrix and all it's parts. 
+
+
+![](http://rasbt.github.io/mlxtend/user_guide/evaluate/confusion_matrix_files/confusion_matrix_1.png)
+
+
+Let's revisit the opiod data again.
+```{r load_data}
+prescribers<-read.csv("D:/OneDrive/SP18/Applied Data Mining - BIA 6301 BSB/Week1 - Naive Bayes, KNN/prescribers.csv") #or you can fully specify the pathname in the read command
+
+#View(prescribers)
+
+prescribers<-prescribers[,c(241,1:240,242:331)] #Rearranging the columns so that the target variable (opioid.prescriber) is in the first column
+
+prescribers$Male <-ifelse(prescribers$Gender=="M",1,0) #if Male = 1; if Female=0.
+prescribers<-prescribers[,-2] #We do not need the Gender variable anymore so delete it.
+
+#names(prescribers)
+
+dim(prescribers)
+
+table(prescribers$Opioid.Prescriber)
+```
+
+Create our test train split
+```{r split_data}
+
+set.seed(123)
+
+prescribers_train<-prescribers[1:20000, ]
+prescribers_test<-prescribers[20001:25000, ]
+
+prop.table(table(prescribers_train$Opioid.Prescriber)) #notice the same proportion of opioid prescribers and non-prescribers.
+prop.table(table(prescribers_test$Opioid.Prescriber))
+```
+
+And build our decision tree:
+
+```{r decision_tree}
+# Using rpart to Build a Decision Tree
+
+set.seed(123)
+prescribers_rpart <- rpart(prescribers_train$Opioid.Prescriber~., method="class", parms = list(split="gini"), data=prescribers_train)
+
+prp(prescribers_rpart, type=1, extra=1, split.font=1, varlen = -10)
+```
+
+And do our prediction:
+
+```{r predict_dt}
+rpart_predict <- predict(prescribers_rpart, prescribers_test, type="class")
+
+```
+
+So how'd we do?
+
+
+
+```{r metric_dt}
+tab_pred<- table(rpart_predict, prescribers_test$Opioid.Prescriber)
+tab_pred
+tab_prop<-prop.table(table(rpart_predict, prescribers_test$Opioid.Prescriber))
+tab_prop
+#accuracy
+tab_prop[1,1]+tab_prop[2,2]
+(tab_pred[1,1]+tab_pred[2,2])/(tab_pred[1,1]+tab_pred[1,2]+tab_pred[2,1]+tab_pred[2,2])
+```
+
+
+```{r hand_calc}
+TP = 2165
+TN = 1662
+FP = 389
+FN = 784
+
+Sensitivity = TP/(TP+FN) #true positive rate; recall; TP/(TP+FN)
+Specificity = TN/(TN+FP) #how often is the prediction negative when actual is negative?
+Precision = TP/(TP+FP) #how often is prediction positive when actual is positive?
+Accuracy = (TP+TN)/(TP+TN+FP+FN) #how often is classifier correct
+
+
+Value<-round(c(TP,TN,FP,FN,Sensitivity,Specificity,Precision,Accuracy),digits=3)
+Measure<-c("True Positive","True Negative","False Positive","False Negative","Sensitivity/Recall=TP/(TN+FP)",
+         "Specificity=TN/(TN+TP)","Precision=TP/(TP+FP)","Accuracy=(TP+TN)/total")
+
+table<-as.data.frame(cbind(Measure,Value))
+
+
+kable(table)
+```
+
+
+Here is a good link http://www.dataschool.io/simple-guide-to-confusion-matrix-terminology/ with a short tutorial on confusion matrix. 
+
+
+
+## Using the caret package
+Not only can we create one ourselves, there's a package for that!
+
+
+```{r rpart_caret}
+results.matrix <- confusionMatrix(rpart_predict, prescribers_test$Opioid.Prescriber, positive="yes")
+print(results.matrix)
+```
+
+## Kappa Statistic
+
+$$ Kappa = \frac{Pr(a) - Pr(e)}{1-Pr(e)} $$
+
+Where, 
+
+Pr(a): proportion of actual agreement between the classifier and the true values  
+
+Pr(e): proportion of expected agreement between the classifier and the true values
+
+Kappa "adjusts accuracy by accounting for the possibility of a correct prediction by **chance alone.** Kappa values range to a maximum number of 1, which indicates perfect agreement between the model's predictions and the true values--a rare occurrence. Values less than one indicate imperfect agreement" (Lantz 2013, p. 303)
+
+
+|                   |Actual  |        |Marginal_Frequency    |
+|------------------:|-------:|-------:|---------------------:|
+|Prediction         |NO      |  YES   |                      |
+|NO                 |1662    |784    |2446                  |
+|YES                |389     |2165    |2554                  |
+|-------------------|--------|--------|----------------------|
+|Marginal_Frequency |2051    |2949    |5000                      |
+
+
+```{r hand_kappa}
+Observed_Accuracy = (1662+2165)/5000 
+Expected_Accuracy_NO = (2446*2051)/5000
+Expected_Accuracy_YES = (2554*2949)/5000
+Expected_Accuracy_BOTH_CLASSES = (Expected_Accuracy_NO+Expected_Accuracy_YES)/5000
+Kappa_Statistic = (Observed_Accuracy-Expected_Accuracy_BOTH_CLASSES)/(1-Expected_Accuracy_BOTH_CLASSES)
+
+table<-cbind(Observed_Accuracy,Expected_Accuracy_NO,Expected_Accuracy_YES,Expected_Accuracy_BOTH_CLASSES, Kappa_Statistic)
+
+table_t<-t(table)
+
+colnames(table_t)<-c("value")
+
+
+kable(table_t)
+```
+
+
+### What's a Good Kappa Value?
+
+There is no one answer. 
+
+Landis & Koch (1977):
+
+| Range      | Strength      |  
+|------------|---------------|
+| 0 - 0.2    | Poor          |
+| 0.21 - 0.4 | Fair          |
+| 0.41 - 0.6 | Moderate      |  
+| 0.61 - 0.8 | Substantial   |  
+| 0.81 - 1.0 | Almost perfect|
+
+
+Fleiss (1981):
+
+
+| Range      | Strength      |  
+|------------|---------------|
+| 0 - 0.4    | Poor          |
+| 0.41 - 0.75| Fair to Good  |
+| 0.75 - 1   | Excellent     |  
+
+
+Be careful! Kappa is not the best metric if accuracy is not what you are after.  
+
+
+
+
+## ROC Curve: One More Performance Evaluation Metric 
+
+The ROC (receiver operating characteristics) curve displays the true positive rate (sensitivity) against the false positive rate (1-specificity). The closer the curve follows the left hand border and then the top left border of the ROC space, the more accurate the model.
+
+```{r ROC_dt}
+#Create a ROC curve
+
+# be sure to load the ROCR library first
+rpart_pred_prob <- predict(prescribers_rpart, prescribers_test, type="prob") #notice the change from raw to prob
+rpart_pred_prob_2 <- prediction(rpart_pred_prob[,2], prescribers_test$Opioid.Prescriber)
+rpart.perf <- performance(rpart_pred_prob_2,"tpr","fpr")
+plot(rpart.perf, main = "ROC Curve for Bootstrapping Decision Tree Model", col=2, lwd=2)
+abline(a=0,b=1,lwd=2,lty=2,col="gray")
+
+unlist(rpart.perf@y.values) #This is the AUC value (area under the ROC curve)
+```
+
+
+
+##Verifying the Performance of a Model 
+
+The best way to measure performance is to know the **true error rate**. The true error rate is calculated by comparing the model's predictions against actual outcomes in the **entire population**.  In reality, we usually are not working with the whole population. We are working with one or more samples from the population; hence, we do not know the true error rate. 
+
+### Naive Approach 
+
+A **naive** way to estimate the true error rate is to apply our model to the entire sample (i.e. training dataset) and then calculate the error rate. The naive approach has several drawbacks:
+
+* Final model will overfit the training data. The problem is magnified when a model has a large number of parameters.  
+
+* Estimated error rate is likely to be lower than the true error rate.  
+
+A better approach than the naive method is **resampling**.   
+
+
+### Resampling   
+
+Resampling refers to drawing repeated samples from the sample(s) we have. The goal of resampling is to gauge performances of competing models. *Resampling is our attempt to simulate the conditions needed to calculate the true error rate.*  
+
+Four major resampling methods:  
+
+1. one-fold cross validation  
+
+2. k-fold cross validation & repeated k-fold cross validation  
+
+3. leave-one-out cross validation  
+
+4. bootstrapping    
+
+
+#### One-Fold Cross Validation
+
+We touched on the validation set approach in the first two weeks of class. In particular, the validation set approach involves randomly dividing the known observations into two subgroups: a) a **training set** and b) a **test set**. We fit our model with the training set and then tests the model's performance on the test set. Common splits include 60-40 (60% training set and 40% test set), 70-30, and 80-20.
+
+This is the example above where we used a manual split for our 80/20 division.  We can also use random draws or createDataPartition from the caret package (see week 3 markdown for reminders)
+
+```{r reminder_tree }
+prp(prescribers_rpart, type=1, extra=1, split.font=1, varlen = -10)
+```
+
+
+
+In one fold cross validation, we have an estimated error rate that has high bias & variance. The way around the bias-variance tradeoff problem is by using **k-fold cross validation**. 
+
+![bias variance tradeoff](https://qph.ec.quoracdn.net/main-qimg-de907f5ea63c611c3e82c71dcc33295d)
+
+
+#### k-Fold Cross Validation
+
+k-fold cross validation is a resampling technique that divides the dataset into k groups, or folds, of equal size. Here is how it works:  
+
+1. Keep one fold as the validation set. Fit the model on the other k-1 folds.  
+
+2. Test fitted model on the validation set. Calculate the mean squared error (MSE) on the validation set. 
+
+3. Repeat Steps 1 & 2 over and over again so that a different fold is used as a validation set. **The true error rate is estimated as the average error rate of all repetitions.**  
+
+Use the **caret** package for this task.  
+
+We will divide the training set into 10-folds. Each fold will eventually be used as a validation set.
+
+```{r kfoldcv}
+fitControl <- trainControl(method="cv", number=10) #use fitControl to set options for k-fold cross validation
+
+set.seed(123)
+prescribers_10folds<-train(Opioid.Prescriber~., data=prescribers_train, method="rpart", metric="Accuracy", trControl=fitControl) #notice we use the train function in caret and pass rpart through it
+prescribers_10folds
+```
+
+Now we calculate the error rate of the chosen decision tree on the validation set. 
+
+```{r kfoldcv.rpart}
+actual <- prescribers_test$Opioid.Prescriber
+predicted <- predict(prescribers_10folds, prescribers_test, type="raw")
+results.matrix <- confusionMatrix(predicted, actual, positive="yes")
+print(results.matrix)
+```
+
+
+
+
+
+```{r kfoldcv.kappa}
+fitControl <- trainControl(method="cv", number=10) #use fitControl to set options for k-fold cross validation
+
+set.seed(123)
+prescribers_10folds<-train(Opioid.Prescriber~., data=prescribers_train, method="rpart", metric="Kappa", trControl=fitControl) #notice we use the train function in caret and pass rpart through it
+prescribers_10folds
+```
+
+
+k-fold cross validation is still problematic, however. Vanwinckelen and Blockeel (2011) noted:  
+
+
+*In addition to bias, the results of a k-fold cross-validation also have high variance. If we run two different tenfold cross-validations for the same learners on the same data set S, but with different random partitioning of S into subsets S(i), these two cross-validations can give quite different results. An estimate with smaller variance can be obtained by repeating the cross-validation several times, with different partitionings, and taking the average of the results obtained during each cross-validation* (page 2).
+
+
+#### Repeated k-fold Cross Validation
+
+Repeated k-fold cross validation "repeats" the k-fold cross validation over and over again and stops at some prespecified number of times. 
+
+```{r repeatedkfoldcv}
+fitControl <- trainControl(method="repeatedcv", number=10, repeats=5) #10-fold cross validation #repeated 5 times.
+
+set.seed(123)
+prescribers_10folds_rp<-train(Opioid.Prescriber~., data=prescribers_train, method="rpart", metric="Accuracy", trControl=fitControl)
+prescribers_10folds_rp
+
+actual <- prescribers_test$Opioid.Prescriber
+predicted <- predict(prescribers_10folds_rp, prescribers_test, type="raw")
+results.matrix <- confusionMatrix(predicted, actual, positive="yes")
+print(results.matrix)
+```
+
+
+#### Leave-one-out Cross Validation (LOOCV)
+
+Repeated k-fold cross validation can help reduce the high variance problem, but we still have to deal with the high bias problem. A way to minimize the bias problem is to do LOOCV. The technique is a degenerate case of k-fold cross validation, where K is chosen as the total number of observations. LOOCV uses all observations as the training set and leaves one observation out as the test set. The process repeats until all observations have been used as a validation set.
+
+LOOCV is very computationally intensive!!
+
+```{r loocv}
+
+#fitControl <- trainControl(method="LOOCV") #10-fold cross validation
+
+#set.seed(123)
+#prescribers_loocv<-train(Opioid.Prescriber~., data=prescribers_train, method="rpart", metric="Accuracy", trControl=fitControl)
+#prescribers_loocv
+
+#actual <- prescribers_test$Opioid.Prescriber
+#predicted <- predict(prescribers_loocv, prescribers_test, type="raw")
+#results.matrix <- confusionMatrix(predicted, actual, positive="yes")
+#print(results.matrix)
+```
+
+#### Bootstrapping 
+
+Bootstrapping is a resampling technique that obtain distinct datasets by repeatedly sampling observations from the original dataset with replacement. 
+
+Each boostrapped dataset is created by sampling with replacement and is the same size as the original dataset. Consequently, some observations may appear more than once in a given boostrapped dataset while other observations may not appear at all.
+
+Note: The default method in the train() function in the caret package is the bootstrap.
+
+```{r bootstrap}
+cvCtrl <- trainControl(method="boot", number=10) #10 bootstrapped samples.
+set.seed(123)
+prescribers_bootstrap<-train(Opioid.Prescriber~., data=prescribers_train, method="rpart", metric="Accuracy", trControl=cvCtrl)
+prescribers_bootstrap
+
+actual <- prescribers_test$Opioid.Prescriber
+predicted <- predict(prescribers_bootstrap, prescribers_test, type="raw")
+results.matrix <- confusionMatrix(predicted, actual, positive="yes")
+print(results.matrix)
+```
+
+
+### Last Words on Resampling
+
+A question you may be pondering about is "how many folds should I use?" The answer depends on the size of the dataset. For large datasets, you can use a small number of folds and still get an accurate error estimate. For smaller datasets, you may have to use LOOCV. You should remember these rules:
+
+---
+
+**BIAS-VARIANCE TRADEOFF WITH RESAMPLING**
+
+**Small number of folds** = error estimate is more biased but also has lower variance. Computationally less intensive.   
+
+**Large number of folds** = error estimate is less biased but also has higher variance. More computationally intensive. 
+
+---
+
+
+
+
+# Comparing Model Performance
+
+Many times evaluating a single model's performance isn't as important as comparing across models (or comparing across parameter settings for a single model type)
+
+Let's compare our 3 favorites: DT, NB, and KNN
+
+
+Test train split:
+
+```{r compare_split}
+set.seed(123)
+trainIndex <- createDataPartition(prescribers$Opioid.Prescriber, p = .8,list = FALSE,times = 1)
+prescribers_train <- prescribers[trainIndex,]
+prescribers_test <- prescribers[-trainIndex,] #notice the minus sign
+
+dim(prescribers_train)
+dim(prescribers_test)
+prop.table(table(prescribers_train$Opioid.Prescriber)) #notice the same proportion of opioid prescribers and non-prescribers.
+prop.table(table(prescribers_test$Opioid.Prescriber))
+```
+
+Decision tree with 3 fold cross validation:
+
+```{r dt cv3}
+cvCtrl <- trainControl(method="cv", number=3) 
+set.seed(123)
+prescribers_cv_dt<-train(Opioid.Prescriber~., data=prescribers_train, method="rpart", metric="Accuracy", trControl=cvCtrl)
+prescribers_cv_dt
+
+actual <- prescribers_test$Opioid.Prescriber
+predicted <- predict(prescribers_cv_dt, prescribers_test, type="raw")
+results.matrix.dt <- confusionMatrix(predicted, actual, positive="yes")
+print(results.matrix.dt)
+```
+
+
+Knn with 3 fold cross validation:
+
+```{r knn cv3}
+options(warn=-1)
+
+cvCtrl <- trainControl(method="cv", number=3) # samples.
+set.seed(123)
+prescribers_cv_knn<-train(Opioid.Prescriber~., data=prescribers_train, method="knn", metric="Accuracy", trControl=cvCtrl)
+prescribers_cv_knn
+
+actual <- prescribers_test$Opioid.Prescriber
+predicted <- predict(prescribers_cv_knn, prescribers_test, type="raw")
+results.matrix.knn <- confusionMatrix(predicted, actual, positive="yes")
+print(results.matrix.knn)
+```
+
+
+```{r nb cv3}
+options(warn=-1)
+
+cvCtrl <- trainControl(method="cv", number=3) 
+set.seed(123)
+prescribers_cv_nb<-train(Opioid.Prescriber~., data=prescribers_train, method = 'naive_bayes', metric="Accuracy", trControl=cvCtrl)
+prescribers_cv_nb
+
+actual <- prescribers_test$Opioid.Prescriber
+predicted <- predict(prescribers_cv_nb, prescribers_test, type="raw")
+results.matrix.nb <- confusionMatrix(predicted, actual, positive="yes")
+print(results.matrix.nb)
+```
+```{r compare_models}
+
+```
+
+## What does a ROC diagram look like with multiple models?
+
+Let's draw some curves:
+
+```{r}
+#Create a ROC curve
+# be sure to load the ROCR library first
+rpart_pred_prob <- predict(prescribers_cv_dt, prescribers_test, type="prob") #notice the change from raw to prob
+rpart_pred_prob_2 <- prediction(rpart_pred_prob[,2], prescribers_test$Opioid.Prescriber)
+rpart.perf <- performance(rpart_pred_prob_2,"tpr","fpr")
+
+knn_pred_prob <- predict(prescribers_cv_knn, prescribers_test, type="prob") #notice the change from raw to prob
+knn_pred_prob_2 <- prediction(knn_pred_prob[,2], prescribers_test$Opioid.Prescriber)
+knn.perf <- performance(knn_pred_prob_2,"tpr","fpr")
+
+nb_pred_prob <- predict(prescribers_cv_nb, prescribers_test, type="prob") #notice the change from raw to prob
+nb_pred_prob_2 <- prediction(nb_pred_prob[,2], prescribers_test$Opioid.Prescriber)
+nb.perf <- performance(rpart_pred_prob_2,"tpr","fpr")
+
+plot(rpart.perf, main = "ROC Curves", col="red", lwd=2)
+plot(knn.perf, add = TRUE, col="blue", lwd=2)
+plot(nb.perf, add = TRUE, col="green", lwd=2)
+abline(a=0,b=1,lwd=2,lty=2,col="gray")
+
+```
+

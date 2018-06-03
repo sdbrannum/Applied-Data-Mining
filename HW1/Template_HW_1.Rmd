@@ -1,0 +1,72 @@
+---
+title: 'HW #1 Template'
+author: "Put Your Name Here"
+date: '`r Sys.Date()`'
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# The Business Problem
+
+You were recently hired as a data scientist by Universal Bank. The bank’s Vice President is interested in building a model to help predict when users might respond to a campaign to take out a personal loan. She supplies you with a dataset containing information of 5,000 customers and attaches a description about the dataset (see page 3 of this assignment). 
+
+The VP tells you that another analyst has created a logistic regression model and hands you an R code file (please download the Template_HW_1.Rmd file).
+
+## Data file description
+
+The file **UniversalBank.csv** contains data on 5,000 customers. The data include customer demographic information (age, income, etc.), the customer’s relationship with the bank (mortgage, securities accounts, etc.), and the customer response to the last personal loan campaign (Personal.Loan). Among these 5,000 customers, only 480 (9.6%) accepted the personal loan that was offered to them in the earlier campaign.  
+
+
+Here is a description of each variable in the Universal Bank dataset:    
+
+**ID**: Customer ID   
+
+**Age**: Customer’s age in years    
+
+**Experience**: Number of years of professional work experience  
+
+**Income**: Annual income in thousands of dollars ($000)  
+
+**Zip.Code**: Zip code of home address  
+
+**Family**: Customer's family size  
+
+**CC Avg**: Average spending on credit cards per month in thousands of dollars ($000)  
+
+**Education**: Education level where 1 = Undergraduate; 2 = Graduate; and 3=Advanced/Professional  
+
+**Mortgage**: Value of house mortgage if any; in thousands of dollar ($000)  
+
+**Personal.Loan**: Did the customer accept a personal loan offered in the bank’s last campaign? 1=Yes; 0 = No  
+
+**Securities.Account**: Does the customer have a securities account with the bank? 1 = Yes; 0 = No  
+
+**CD.Account**: Does the customer have a certificate of deposit (CD) account with the bank? 1 = Yes; 0 = No  
+
+**Online**: Does the customer use Internet banking facilities? 1 = Yes; 0 = No  
+
+**Credit.Card**: Does the customer use a credit card issued by Universal Bank? 1 = Yes; 0 = No  
+
+##Data File Prep  
+
+We will drop the ID and Zip.Code columns and also recode Education variable into a factor variable.
+ 
+```{r data prep}
+bank.df <- read.csv("UniversalBank.csv")
+bank.df <- bank.df[,-c(1,5)] # drop ID and zip code columns.  
+# create categorical variable for education
+bank.df$Education <- factor(bank.df$Education, levels = c(1,2,3), labels = c("Undergrad", "Graduate", "Advanced/Professional"))
+```
+
+## Logistic Regression Model
+```{r logit}
+logit.reg <- glm(bank.df$Personal.Loan ~., data = bank.df, family = "binomial")
+options(scipen=999)
+summary(logit.reg)
+```
+
